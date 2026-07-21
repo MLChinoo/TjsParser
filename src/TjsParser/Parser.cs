@@ -8,13 +8,14 @@ namespace TjsParser;
 public enum TjsFileKind
 {
     SourceText,
-    Tjs2100Bytecode
+    Tjs2100Bytecode,
+    Kbad100BinaryData
 }
 
 public sealed class UnsupportedTjsFormatException : NotSupportedException
 {
     public UnsupportedTjsFormatException(string sourcePath, TjsFileKind fileKind)
-        : base("Compiled TJS2 bytecode (TJS2100) is not supported: " + sourcePath)
+        : base(Describe(fileKind) + " is not supported: " + sourcePath)
     {
         SourcePath = sourcePath;
         FileKind = fileKind;
@@ -22,6 +23,16 @@ public sealed class UnsupportedTjsFormatException : NotSupportedException
 
     public string SourcePath { get; }
     public TjsFileKind FileKind { get; }
+
+    private static string Describe(TjsFileKind fileKind)
+    {
+        switch (fileKind)
+        {
+            case TjsFileKind.Tjs2100Bytecode: return "Compiled TJS2 bytecode (TJS2100)";
+            case TjsFileKind.Kbad100BinaryData: return "Binary TJS dictionary/array data (KBAD100)";
+            default: return "TJS file format '" + fileKind + "'";
+        }
+    }
 }
 
 public static class Parser

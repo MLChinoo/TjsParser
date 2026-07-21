@@ -4,6 +4,7 @@
     <AssemblyName>TjsParser</AssemblyName>
     <RootNamespace>TjsParser</RootNamespace>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <NoWarn>$(NoWarn);1591</NoWarn>
   </PropertyGroup>
   <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">

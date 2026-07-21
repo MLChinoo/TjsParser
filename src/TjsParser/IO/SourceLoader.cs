@@ -16,6 +16,7 @@ internal sealed class LoadedSource
 internal static class SourceLoader
 {
     private static readonly byte[] Tjs2100Signature = Encoding.ASCII.GetBytes("TJS2100\0");
+    private static readonly byte[] Kbad100Signature = Encoding.ASCII.GetBytes("KBAD100\0");
 
     static SourceLoader()
     {
@@ -26,7 +27,7 @@ internal static class SourceLoader
     {
         var bytes = File.ReadAllBytes(path);
         var fileKind = DetectFileKind(bytes);
-        if (fileKind == TjsFileKind.Tjs2100Bytecode)
+        if (fileKind != TjsFileKind.SourceText)
             throw new UnsupportedTjsFormatException(path, fileKind);
         if (!string.IsNullOrWhiteSpace(hint)) return DecodeHint(bytes, hint!);
         if (Starts(bytes, 0xEF, 0xBB, 0xBF)) return Decode(bytes, new UTF8Encoding(false, true), 3, "utf-8", true);
@@ -44,7 +45,7 @@ internal static class SourceLoader
     public static TjsFileKind DetectFileKind(string path)
     {
         using var stream = File.OpenRead(path);
-        var header = new byte[Tjs2100Signature.Length];
+        var header = new byte[Math.Max(Tjs2100Signature.Length, Kbad100Signature.Length)];
         var count = 0;
         while (count < header.Length)
         {
@@ -60,10 +61,9 @@ internal static class SourceLoader
 
     private static TjsFileKind DetectFileKind(byte[] bytes, int count)
     {
-        if (count < Tjs2100Signature.Length) return TjsFileKind.SourceText;
-        for (var i = 0; i < Tjs2100Signature.Length; i++)
-            if (bytes[i] != Tjs2100Signature[i]) return TjsFileKind.SourceText;
-        return TjsFileKind.Tjs2100Bytecode;
+        if (Starts(bytes, count, Tjs2100Signature)) return TjsFileKind.Tjs2100Bytecode;
+        if (Starts(bytes, count, Kbad100Signature)) return TjsFileKind.Kbad100BinaryData;
+        return TjsFileKind.SourceText;
     }
 
     private static LoadedSource DecodeHint(byte[] bytes, string hint)
@@ -85,6 +85,13 @@ internal static class SourceLoader
     private static bool Starts(byte[] bytes, params byte[] prefix)
     {
         if (bytes.Length < prefix.Length) return false;
+        for (var i = 0; i < prefix.Length; i++) if (bytes[i] != prefix[i]) return false;
+        return true;
+    }
+
+    private static bool Starts(byte[] bytes, int count, byte[] prefix)
+    {
+        if (count < prefix.Length) return false;
         for (var i = 0; i < prefix.Length; i++) if (bytes[i] != prefix[i]) return false;
         return true;
     }

@@ -32,7 +32,11 @@ public static class AstJson
         if (stream == null) throw new ArgumentNullException(nameof(stream));
         if (result == null) throw new ArgumentNullException(nameof(result));
         options ??= new AstJsonOptions();
-        using var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = options.Indented });
+        using var writer = new Utf8JsonWriter(stream, new JsonWriterOptions
+        {
+            Indented = options.Indented,
+            Encoder = TjsJsonEncoder.Instance
+        });
         writer.WriteStartObject();
         writer.WriteString("schemaVersion", "1.0");
         WriteSource(writer, result.Source);

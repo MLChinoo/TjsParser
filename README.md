@@ -35,7 +35,7 @@ if (!result.Success)
 
 `Parser.ParseText` 用于已经解码成 .NET `string` 的源码。`Parser.ParseFile` 自动识别 UTF-8、UTF-16LE/BE BOM 和 CP932；也可以通过 `ParseOptions.EncodingHint` 强制指定。
 
-`.tjs` 也可能是以 `TJS2100\0` 开头的已编译 TJS2 字节码。本项目当前只解析明文源码，不反汇编或反编译字节码。可以在解析前调用 `Parser.DetectFileKind(path)`；直接把字节码传给 `Parser.ParseFile` 会抛出 `UnsupportedTjsFormatException`，编码参数不会绕过该检查。
+`.tjs` 除了明文源码，还可能是以 `TJS2100\0` 开头的已编译 TJS2 字节码，或以 `KBAD100\0` 开头的二进制 Dictionary/Array 数据。本项目当前只解析明文源码，不反汇编字节码或反序列化 KBAD 数据。可以在解析前调用 `Parser.DetectFileKind(path)`；直接把这两种二进制文件传给 `Parser.ParseFile` 会抛出 `UnsupportedTjsFormatException`，编码参数不会绕过该检查。
 
 ## 命令行
 
@@ -73,14 +73,14 @@ dotnet run --project src/TjsParser.Cli -- parse D:\game\data -o D:\output\active
 - `--compact`：输出紧凑 JSON。
 - `--no-comments`：不把注释写入 JSON。
 
-目录模式保持输入相对路径，以 `.tjs.json` 为扩展名，并生成汇总 `manifest.json`。TJS2100 字节码不会生成 JSON，而是在 manifest 中标记为 `tjs2100-bytecode`/`skipped`；跳过字节码本身不导致命令失败。只要任一明文文件存在错误级诊断，CLI 返回退出码 1。单文件输入为字节码时不会生成输出，并返回退出码 1。
+目录模式保持输入相对路径，以 `.tjs.json` 为扩展名，并生成汇总 `manifest.json`。TJS2100 字节码和 KBAD100 二进制数据不会生成 JSON，而是在 manifest 中分别标记为 `tjs2100-bytecode`/`skipped` 和 `kbad100-binary-data`/`skipped`；跳过它们不导致命令失败。只要任一明文文件存在错误级诊断，CLI 返回退出码 1。单文件输入为任一二进制格式时不会生成输出，并返回退出码 1。
 
 ## AST 与 JSON
 
 解析器区分两种文档根节点：
 
 - `ScriptDocumentSyntax`：普通 TJS 程序。
-- `ExpressionDocumentSyntax`：以 `%[...]`、`[...]` 或 `(const)[...]` 为整文件内容的数据表达式。
+- `ExpressionDocumentSyntax`：以 `%[...]`、`[...]`、`(const)[...]` 或匿名函数为整文件内容的表达式。
 
 JSON 顶层固定包含 `schemaVersion`、`source`、`document`、`preprocessor`、`diagnostics`，默认还包含 `comments`。每个 AST 节点都有 `type` 和结束位置不包含在内的 `span`。TJS 字典始终输出有序 `entries`，不会压缩成 JSON object，因此能保留重复键、表达式键和分隔形式。
 
@@ -93,4 +93,4 @@ $env:TJS_CORPUS_DIR = 'D:\game\data'
 dotnet test TjsParser.sln -c Release
 ```
 
-游戏文件仅从外部目录读取，不会复制到仓库中。语料测试会解析所有明文文件，并识别后跳过 TJS2100 字节码。
+游戏文件仅从外部目录读取，不会复制到仓库中。语料测试会解析所有明文文件，并验证 TJS2100 与 KBAD100 二进制文件会在文本解码前被识别和拒绝。

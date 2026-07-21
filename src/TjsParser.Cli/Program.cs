@@ -37,9 +37,10 @@ internal static class Cli
     private static int ParseFile(CliOptions cli)
     {
         var input = Path.GetFullPath(cli.Input!);
-        if (Parser.DetectFileKind(input) == TjsFileKind.Tjs2100Bytecode)
+        var fileKind = Parser.DetectFileKind(input);
+        if (fileKind != TjsFileKind.SourceText)
         {
-            Console.Error.WriteLine(cli.Input + ": compiled TJS2 bytecode (TJS2100) is not supported.");
+            Console.Error.WriteLine(cli.Input + ": " + UnsupportedDescription(fileKind) + " is not supported.");
             return 1;
         }
         var result = Parser.ParseFile(input, cli.ParseOptions);
@@ -91,10 +92,11 @@ internal static class Cli
             var itemPath = relative.Replace('\\', '/');
             try
             {
-                if (Parser.DetectFileKind(file) == TjsFileKind.Tjs2100Bytecode)
+                var fileKind = Parser.DetectFileKind(file);
+                if (fileKind != TjsFileKind.SourceText)
                 {
                     skippedCount++;
-                    manifest.Add(ManifestItem.SkippedBytecode(itemPath));
+                    manifest.Add(ManifestItem.SkippedUnsupported(itemPath, fileKind));
                     continue;
                 }
                 var output = Path.Combine(outputRoot, relative + ".json");
@@ -125,7 +127,7 @@ internal static class Cli
         var manifestPath = Path.Combine(outputRoot, "manifest.json");
         File.WriteAllText(manifestPath, JsonSerializer.Serialize(new
         {
-            schemaVersion = "1.1",
+            schemaVersion = "1.2",
             inputRoot,
             fileCount = files.Length,
             parsedCount,
@@ -133,7 +135,12 @@ internal static class Cli
             failedCount,
             success = failedCount == 0,
             files = manifest
-        }, new JsonSerializerOptions { WriteIndented = !cli.Compact, PropertyNamingPolicy = JsonNamingPolicy.CamelCase }));
+        }, new JsonSerializerOptions
+        {
+            WriteIndented = !cli.Compact,
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            Encoder = TjsJsonEncoder.Instance
+        }));
         Console.Error.WriteLine($"Processed {files.Length} files: parsed {parsedCount}, skipped {skippedCount}, failed {failedCount}; output: {outputRoot}");
         return failedCount == 0 ? 0 : 1;
     }
@@ -142,6 +149,16 @@ internal static class Cli
     {
         foreach (var diagnostic in result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error))
             Console.Error.WriteLine($"{path}({diagnostic.Span.Start.Line},{diagnostic.Span.Start.Column}): {diagnostic.Code}: {diagnostic.Message}");
+    }
+
+    private static string UnsupportedDescription(TjsFileKind fileKind)
+    {
+        switch (fileKind)
+        {
+            case TjsFileKind.Tjs2100Bytecode: return "compiled TJS2 bytecode (TJS2100)";
+            case TjsFileKind.Kbad100BinaryData: return "binary TJS dictionary/array data (KBAD100)";
+            default: return "TJS file format '" + fileKind + "'";
+        }
     }
 
     private static void PrintUsage()
@@ -231,9 +248,20 @@ internal sealed class ManifestItem
     public static ManifestItem Failed(string path, string kind, string? encoding, string? rootMode, int errorCount, string? output, string failure)
         => new ManifestItem(path, kind, "failed", encoding, rootMode, errorCount, output, failure, null);
 
-    public static ManifestItem SkippedBytecode(string path)
-        => new ManifestItem(path, "tjs2100-bytecode", "skipped", null, null, 0, null, null,
-            "Compiled TJS2 bytecode is outside the supported source-parser scope.");
+    public static ManifestItem SkippedUnsupported(string path, TjsFileKind fileKind)
+    {
+        switch (fileKind)
+        {
+            case TjsFileKind.Tjs2100Bytecode:
+                return new ManifestItem(path, "tjs2100-bytecode", "skipped", null, null, 0, null, null,
+                    "Compiled TJS2 bytecode is outside the supported source-parser scope.");
+            case TjsFileKind.Kbad100BinaryData:
+                return new ManifestItem(path, "kbad100-binary-data", "skipped", null, null, 0, null, null,
+                    "Binary TJS dictionary/array data is outside the supported source-parser scope.");
+            default:
+                throw new ArgumentOutOfRangeException(nameof(fileKind), fileKind, "Unsupported file kind.");
+        }
+    }
 
     public string Path { get; }
     public string Kind { get; }

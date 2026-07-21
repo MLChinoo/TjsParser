@@ -47,6 +47,8 @@ internal sealed class ParserCore
     {
         if (At("%") && Peek(1).Text == "[") return true;
         if (At("[") ) return true;
+        if (At("function") && Peek(1).Text == "(") return true;
+        if (At("(") && Peek(1).Text == "function") return true;
         return At("(") && Peek(1).Text == "const" && Peek(2).Text == ")" && (Peek(3).Text == "[" || Peek(3).Text == "%");
     }
 
