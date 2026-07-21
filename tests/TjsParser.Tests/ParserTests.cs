@@ -51,6 +51,59 @@ public sealed class ParserTests
     }
 
     [Fact]
+    public void ParsesArrowSeparatedCallArguments()
+    {
+        const string source = "DataExtraInfo.push(\"StoreTime\" => function(ret, key) { return key; } incontextof this);";
+        var result = Parser.ParseText(source);
+
+        Assert.True(result.Success, FormatDiagnostics(result));
+        var document = Assert.IsType<ScriptDocumentSyntax>(result.Document);
+        var statement = Assert.IsType<ExpressionStatementSyntax>(Assert.Single(document.Body));
+        var call = Assert.IsType<CallExpressionSyntax>(statement.Expression);
+        Assert.Equal(2, call.Arguments.Count);
+        Assert.IsType<LiteralExpressionSyntax>(call.Arguments[0].Expression);
+        Assert.IsType<BinaryExpressionSyntax>(call.Arguments[1].Expression);
+        Assert.False(call.Arguments[0].IsOmitted);
+        Assert.False(call.Arguments[1].IsOmitted);
+    }
+
+    [Fact]
+    public void DetectsAndRejectsTjs2100BytecodeBeforeDecoding()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "tjs-parser-bytecode-" + Guid.NewGuid().ToString("N") + ".tjs");
+        try
+        {
+            File.WriteAllBytes(path, Encoding.ASCII.GetBytes("TJS2100\0\u0014\u0005\0\0DATA"));
+            Assert.Equal(TjsFileKind.Tjs2100Bytecode, Parser.DetectFileKind(path));
+
+            var options = new ParseOptions { EncodingHint = "utf-16le" };
+            var exception = Assert.Throws<UnsupportedTjsFormatException>(() => Parser.ParseFile(path, options));
+            Assert.Equal(TjsFileKind.Tjs2100Bytecode, exception.FileKind);
+            Assert.Equal(path, exception.SourcePath);
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    }
+
+    [Fact]
+    public void SimilarOrShortHeadersRemainSourceText()
+    {
+        var nearPath = Path.Combine(Path.GetTempPath(), "tjs-parser-near-header-" + Guid.NewGuid().ToString("N") + ".tjs");
+        var shortPath = Path.Combine(Path.GetTempPath(), "tjs-parser-short-header-" + Guid.NewGuid().ToString("N") + ".tjs");
+        try
+        {
+            File.WriteAllBytes(nearPath, Encoding.ASCII.GetBytes("TJS2101\0"));
+            File.WriteAllBytes(shortPath, Encoding.ASCII.GetBytes("TJS2"));
+            Assert.Equal(TjsFileKind.SourceText, Parser.DetectFileKind(nearPath));
+            Assert.Equal(TjsFileKind.SourceText, Parser.DetectFileKind(shortPath));
+        }
+        finally
+        {
+            if (File.Exists(nearPath)) File.Delete(nearPath);
+            if (File.Exists(shortPath)) File.Delete(shortPath);
+        }
+    }
+
+    [Fact]
     public void ActivePreprocessingMasksInactiveSourceWithoutChangingOffsets()
     {
         const string source = "@set (FEATURE=0)\n@if (FEATURE)\nvar hidden = @;\n@endif\nvar visible = 1;";
@@ -101,7 +154,9 @@ public sealed class ParserTests
         if (string.IsNullOrWhiteSpace(root)) return;
         var files = Directory.GetFiles(root, "*.tjs", SearchOption.AllDirectories);
         Assert.NotEmpty(files);
-        foreach (var file in files)
+        var sourceFiles = files.Where(file => Parser.DetectFileKind(file) == TjsFileKind.SourceText).ToArray();
+        Assert.NotEmpty(sourceFiles);
+        foreach (var file in sourceFiles)
         {
             var result = Parser.ParseFile(file);
             Assert.True(result.Success, file + Environment.NewLine + FormatDiagnostics(result));

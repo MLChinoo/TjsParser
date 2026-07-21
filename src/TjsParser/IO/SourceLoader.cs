@@ -15,6 +15,8 @@ internal sealed class LoadedSource
 
 internal static class SourceLoader
 {
+    private static readonly byte[] Tjs2100Signature = Encoding.ASCII.GetBytes("TJS2100\0");
+
     static SourceLoader()
     {
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
@@ -23,6 +25,9 @@ internal static class SourceLoader
     public static LoadedSource Load(string path, string? hint)
     {
         var bytes = File.ReadAllBytes(path);
+        var fileKind = DetectFileKind(bytes);
+        if (fileKind == TjsFileKind.Tjs2100Bytecode)
+            throw new UnsupportedTjsFormatException(path, fileKind);
         if (!string.IsNullOrWhiteSpace(hint)) return DecodeHint(bytes, hint!);
         if (Starts(bytes, 0xEF, 0xBB, 0xBF)) return Decode(bytes, new UTF8Encoding(false, true), 3, "utf-8", true);
         if (Starts(bytes, 0xFF, 0xFE)) return Decode(bytes, new UnicodeEncoding(false, true, true), 2, "utf-16le", true);
@@ -34,6 +39,31 @@ internal static class SourceLoader
             var cp932 = Encoding.GetEncoding(932, EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback);
             return Decode(bytes, cp932, 0, "cp932", false);
         }
+    }
+
+    public static TjsFileKind DetectFileKind(string path)
+    {
+        using var stream = File.OpenRead(path);
+        var header = new byte[Tjs2100Signature.Length];
+        var count = 0;
+        while (count < header.Length)
+        {
+            var read = stream.Read(header, count, header.Length - count);
+            if (read == 0) break;
+            count += read;
+        }
+        return DetectFileKind(header, count);
+    }
+
+    private static TjsFileKind DetectFileKind(byte[] bytes)
+        => DetectFileKind(bytes, bytes.Length);
+
+    private static TjsFileKind DetectFileKind(byte[] bytes, int count)
+    {
+        if (count < Tjs2100Signature.Length) return TjsFileKind.SourceText;
+        for (var i = 0; i < Tjs2100Signature.Length; i++)
+            if (bytes[i] != Tjs2100Signature[i]) return TjsFileKind.SourceText;
+        return TjsFileKind.Tjs2100Bytecode;
     }
 
     private static LoadedSource DecodeHint(byte[] bytes, string hint)

@@ -411,7 +411,7 @@ internal sealed class ParserCore
             {
                 var start = Current.Start;
                 if (Take("...", out var omit)) arguments.Add(new ArgumentSyntax(Span(start, omit.End), null, false, true));
-                else if (At(",")) arguments.Add(new ArgumentSyntax(Span(start, start), null, false, false));
+                else if (At(",") || At("=>")) arguments.Add(new ArgumentSyntax(Span(start, start), null, false, false));
                 else if (Take("*", out var star)) arguments.Add(new ArgumentSyntax(Span(start, star.End), null, true, false));
                 else
                 {
@@ -419,7 +419,7 @@ internal sealed class ParserCore
                     var expanded = Take("*", out var expand);
                     arguments.Add(new ArgumentSyntax(Span(start, expanded ? expand.End : value.Span.End.Offset), value, expanded, false));
                 }
-                if (!Take(",", out _)) break;
+                if (!Take(",", out _) && !Take("=>", out _)) break;
                 if (At(")")) arguments.Add(new ArgumentSyntax(Span(Current.Start, Current.Start), null, false, false));
             }
         }

@@ -70,3 +70,15 @@ TjsParser 的 JSON 是 AST 的跨语言表示，而不是执行 TJS 后得到的
 `PreserveAll` 模式解析所有条件块，同时在 `regions[].isActive` 中记录给定宏环境下的状态。`ActiveOnly` 模式用等长空白遮蔽未激活源码，因此未遮蔽节点的位置仍对应原文件。
 
 预处理器只计算官方 `@set/@if/@endif` 使用的 Int32 表达式，不执行普通 TJS。
+
+## 目录 manifest 1.1
+
+CLI 递归解析目录时生成的 `manifest.json` 与单文件 AST JSON 使用独立的版本号。manifest 1.1 顶层包含 `fileCount`、`parsedCount`、`skippedCount`、`failedCount` 和 `success`。
+
+每个 `files` 条目通过 `kind` 和 `status` 描述处理结果：
+
+- 明文成功解析：`kind: "source-text"`、`status: "parsed"`，并提供 `encoding`、`rootMode` 和 `output`。
+- 明文解析失败：`status: "failed"`，并提供 `errorCount` 和 `failure`。
+- TJS2100 字节码：`kind: "tjs2100-bytecode"`、`status: "skipped"`、`output: null`，并提供 `skipReason`。
+
+字节码跳过不计入 `failedCount`；只要 `failedCount` 为零，目录处理的 `success` 就为 `true`。

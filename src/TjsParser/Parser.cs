@@ -5,6 +5,25 @@ using TjsParser.Parsing;
 
 namespace TjsParser;
 
+public enum TjsFileKind
+{
+    SourceText,
+    Tjs2100Bytecode
+}
+
+public sealed class UnsupportedTjsFormatException : NotSupportedException
+{
+    public UnsupportedTjsFormatException(string sourcePath, TjsFileKind fileKind)
+        : base("Compiled TJS2 bytecode (TJS2100) is not supported: " + sourcePath)
+    {
+        SourcePath = sourcePath;
+        FileKind = fileKind;
+    }
+
+    public string SourcePath { get; }
+    public TjsFileKind FileKind { get; }
+}
+
 public static class Parser
 {
     public static ParseResult ParseText(string source, ParseOptions? options = null)
@@ -12,6 +31,12 @@ public static class Parser
 
     public static ParseResult ParseText(string source, string? sourceName, ParseOptions? options = null)
         => ParseText(source, sourceName, "unicode-string", false, options);
+
+    public static TjsFileKind DetectFileKind(string path)
+    {
+        if (path == null) throw new ArgumentNullException(nameof(path));
+        return SourceLoader.DetectFileKind(path);
+    }
 
     public static ParseResult ParseFile(string path, ParseOptions? options = null)
     {

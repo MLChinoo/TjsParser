@@ -36,7 +36,13 @@ internal static class Cli
 
     private static int ParseFile(CliOptions cli)
     {
-        var result = Parser.ParseFile(Path.GetFullPath(cli.Input!), cli.ParseOptions);
+        var input = Path.GetFullPath(cli.Input!);
+        if (Parser.DetectFileKind(input) == TjsFileKind.Tjs2100Bytecode)
+        {
+            Console.Error.WriteLine(cli.Input + ": compiled TJS2 bytecode (TJS2100) is not supported.");
+            return 1;
+        }
+        var result = Parser.ParseFile(input, cli.ParseOptions);
         var jsonOptions = new AstJsonOptions { Indented = !cli.Compact, IncludeComments = !cli.NoComments };
         if (cli.Output == null) Console.Out.WriteLine(AstJson.Serialize(result, jsonOptions));
         else
@@ -75,32 +81,61 @@ internal static class Cli
         var files = Directory.GetFiles(inputRoot, "*.tjs", SearchOption.AllDirectories);
         Array.Sort(files, StringComparer.OrdinalIgnoreCase);
         var manifest = new List<ManifestItem>();
-        var hasErrors = false;
+        var parsedCount = 0;
+        var skippedCount = 0;
+        var failedCount = 0;
         var jsonOptions = new AstJsonOptions { Indented = !cli.Compact, IncludeComments = !cli.NoComments };
         foreach (var file in files)
         {
             var relative = Path.GetRelativePath(inputRoot, file);
-            var output = Path.Combine(outputRoot, relative + ".json");
-            var parent = Path.GetDirectoryName(output); if (!string.IsNullOrEmpty(parent)) Directory.CreateDirectory(parent);
+            var itemPath = relative.Replace('\\', '/');
             try
             {
+                if (Parser.DetectFileKind(file) == TjsFileKind.Tjs2100Bytecode)
+                {
+                    skippedCount++;
+                    manifest.Add(ManifestItem.SkippedBytecode(itemPath));
+                    continue;
+                }
+                var output = Path.Combine(outputRoot, relative + ".json");
+                var parent = Path.GetDirectoryName(output); if (!string.IsNullOrEmpty(parent)) Directory.CreateDirectory(parent);
                 var result = Parser.ParseFile(file, cli.ParseOptions);
                 using (var stream = File.Create(output)) AstJson.Write(stream, result, jsonOptions);
                 var errors = result.Diagnostics.Count(d => d.Severity == DiagnosticSeverity.Error);
-                manifest.Add(new ManifestItem(relative.Replace('\\', '/'), result.Source.Encoding, result.Source.RootMode.ToString(), errors, output.Substring(outputRoot.Length).TrimStart(Path.DirectorySeparatorChar).Replace('\\', '/')));
-                if (errors != 0) hasErrors = true;
+                var outputPath = output.Substring(outputRoot.Length).TrimStart(Path.DirectorySeparatorChar).Replace('\\', '/');
+                if (errors == 0)
+                {
+                    parsedCount++;
+                    manifest.Add(ManifestItem.Parsed(itemPath, result.Source.Encoding, result.Source.RootMode.ToString(), outputPath));
+                }
+                else
+                {
+                    failedCount++;
+                    manifest.Add(ManifestItem.Failed(itemPath, "source-text", result.Source.Encoding, result.Source.RootMode.ToString(), errors, outputPath, "Parser diagnostics contain errors."));
+                }
                 PrintDiagnostics(result, relative);
             }
             catch (Exception ex)
             {
-                hasErrors = true; manifest.Add(new ManifestItem(relative.Replace('\\', '/'), "unknown", "unknown", 1, null, ex.Message));
+                failedCount++;
+                manifest.Add(ManifestItem.Failed(itemPath, "source-text", null, null, 1, null, ex.Message));
                 Console.Error.WriteLine(relative + ": " + ex.Message);
             }
         }
         var manifestPath = Path.Combine(outputRoot, "manifest.json");
-        File.WriteAllText(manifestPath, JsonSerializer.Serialize(new { schemaVersion = "1.0", inputRoot, fileCount = files.Length, success = !hasErrors, files = manifest }, new JsonSerializerOptions { WriteIndented = !cli.Compact }));
-        Console.Error.WriteLine($"Parsed {files.Length} files; output: {outputRoot}");
-        return hasErrors ? 1 : 0;
+        File.WriteAllText(manifestPath, JsonSerializer.Serialize(new
+        {
+            schemaVersion = "1.1",
+            inputRoot,
+            fileCount = files.Length,
+            parsedCount,
+            skippedCount,
+            failedCount,
+            success = failedCount == 0,
+            files = manifest
+        }, new JsonSerializerOptions { WriteIndented = !cli.Compact, PropertyNamingPolicy = JsonNamingPolicy.CamelCase }));
+        Console.Error.WriteLine($"Processed {files.Length} files: parsed {parsedCount}, skipped {skippedCount}, failed {failedCount}; output: {outputRoot}");
+        return failedCount == 0 ? 0 : 1;
     }
 
     private static void PrintDiagnostics(ParseResult result, string path)
@@ -183,12 +218,30 @@ internal sealed class CliException : Exception { public CliException(string mess
 
 internal sealed class ManifestItem
 {
-    public ManifestItem(string path, string encoding, string rootMode, int errorCount, string? output, string? failure = null)
-    { Path = path; Encoding = encoding; RootMode = rootMode; ErrorCount = errorCount; Output = output; Failure = failure; }
+    private ManifestItem(string path, string kind, string status, string? encoding, string? rootMode, int errorCount,
+        string? output, string? failure, string? skipReason)
+    {
+        Path = path; Kind = kind; Status = status; Encoding = encoding; RootMode = rootMode;
+        ErrorCount = errorCount; Output = output; Failure = failure; SkipReason = skipReason;
+    }
+
+    public static ManifestItem Parsed(string path, string encoding, string rootMode, string output)
+        => new ManifestItem(path, "source-text", "parsed", encoding, rootMode, 0, output, null, null);
+
+    public static ManifestItem Failed(string path, string kind, string? encoding, string? rootMode, int errorCount, string? output, string failure)
+        => new ManifestItem(path, kind, "failed", encoding, rootMode, errorCount, output, failure, null);
+
+    public static ManifestItem SkippedBytecode(string path)
+        => new ManifestItem(path, "tjs2100-bytecode", "skipped", null, null, 0, null, null,
+            "Compiled TJS2 bytecode is outside the supported source-parser scope.");
+
     public string Path { get; }
-    public string Encoding { get; }
-    public string RootMode { get; }
+    public string Kind { get; }
+    public string Status { get; }
+    public string? Encoding { get; }
+    public string? RootMode { get; }
     public int ErrorCount { get; }
     public string? Output { get; }
     public string? Failure { get; }
+    public string? SkipReason { get; }
 }
