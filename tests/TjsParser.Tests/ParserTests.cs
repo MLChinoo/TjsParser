@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using TjsParser;
+using TjsParser.Kbad;
 using TjsParser.Parsing;
 using TjsParser.Serialization;
 using TjsParser.Syntax;
@@ -205,7 +206,8 @@ public sealed class ParserTests
         var files = Directory.GetFiles(root, "*.tjs", SearchOption.AllDirectories);
         Assert.NotEmpty(files);
         var sourceFiles = files.Where(file => Parser.DetectFileKind(file) == TjsFileKind.SourceText).ToArray();
-        var binaryFiles = files.Where(file => Parser.DetectFileKind(file) != TjsFileKind.SourceText).ToArray();
+        var bytecodeFiles = files.Where(file => Parser.DetectFileKind(file) == TjsFileKind.Tjs2100Bytecode).ToArray();
+        var kbadFiles = files.Where(file => Parser.DetectFileKind(file) == TjsFileKind.Kbad100BinaryData).ToArray();
         Assert.NotEmpty(sourceFiles);
         foreach (var file in sourceFiles)
         {
@@ -220,11 +222,17 @@ public sealed class ParserTests
             Assert.True(activeResult.Success, file + " (active preprocessing)" + Environment.NewLine + FormatDiagnostics(activeResult));
         }
 
-        foreach (var file in binaryFiles)
+        foreach (var file in bytecodeFiles)
         {
-            var expectedKind = Parser.DetectFileKind(file);
             var exception = Assert.Throws<UnsupportedTjsFormatException>(() => Parser.ParseFile(file));
-            Assert.Equal(expectedKind, exception.FileKind);
+            Assert.Equal(TjsFileKind.Tjs2100Bytecode, exception.FileKind);
+        }
+
+        foreach (var file in kbadFiles)
+        {
+            var document = KbadReader.ReadFile(file);
+            Assert.IsType<KbadDictionaryValue>(document.Root);
+            Assert.Equal(0, document.TrailingByteCount);
         }
     }
 

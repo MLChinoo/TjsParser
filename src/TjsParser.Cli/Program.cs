@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using TjsParser;
+using TjsParser.Kbad;
 using TjsParser.Parsing;
 using TjsParser.Serialization;
 
@@ -28,6 +29,10 @@ internal static class Cli
         {
             Console.Error.WriteLine(ex.Message); PrintUsage(); return 2;
         }
+        catch (KbadFormatException ex)
+        {
+            Console.Error.WriteLine(ex.Message); return 1;
+        }
         catch (Exception ex)
         {
             Console.Error.WriteLine(ex.ToString()); return 1;
@@ -38,11 +43,27 @@ internal static class Cli
     {
         var input = Path.GetFullPath(cli.Input!);
         var fileKind = Parser.DetectFileKind(input);
-        if (fileKind != TjsFileKind.SourceText)
+        if (fileKind == TjsFileKind.Tjs2100Bytecode)
         {
             Console.Error.WriteLine(cli.Input + ": " + UnsupportedDescription(fileKind) + " is not supported.");
             return 1;
         }
+
+        if (fileKind == TjsFileKind.Kbad100BinaryData)
+        {
+            var document = KbadReader.ReadFile(input);
+            var kbadOptions = new KbadJsonOptions { Indented = !cli.Compact, Shape = cli.KbadJsonShape };
+            if (cli.Output == null) Console.Out.WriteLine(KbadJson.Serialize(document, kbadOptions));
+            else
+            {
+                var output = ResolveSingleFileOutput(cli.Input!, cli.Output);
+                var parent = Path.GetDirectoryName(output); if (!string.IsNullOrEmpty(parent)) Directory.CreateDirectory(parent);
+                using var stream = File.Create(output); KbadJson.Write(stream, document, kbadOptions);
+                Console.Error.WriteLine("Output: " + output);
+            }
+            return 0;
+        }
+
         var result = Parser.ParseFile(input, cli.ParseOptions);
         var jsonOptions = new AstJsonOptions { Indented = !cli.Compact, IncludeComments = !cli.NoComments };
         if (cli.Output == null) Console.Out.WriteLine(AstJson.Serialize(result, jsonOptions));
@@ -86,29 +107,40 @@ internal static class Cli
         var skippedCount = 0;
         var failedCount = 0;
         var jsonOptions = new AstJsonOptions { Indented = !cli.Compact, IncludeComments = !cli.NoComments };
+        var kbadJsonOptions = new KbadJsonOptions { Indented = !cli.Compact, Shape = cli.KbadJsonShape };
         foreach (var file in files)
         {
             var relative = Path.GetRelativePath(inputRoot, file);
             var itemPath = relative.Replace('\\', '/');
+            var fileKind = TjsFileKind.SourceText;
             try
             {
-                var fileKind = Parser.DetectFileKind(file);
-                if (fileKind != TjsFileKind.SourceText)
+                fileKind = Parser.DetectFileKind(file);
+                if (fileKind == TjsFileKind.Tjs2100Bytecode)
                 {
                     skippedCount++;
-                    manifest.Add(ManifestItem.SkippedUnsupported(itemPath, fileKind));
+                    manifest.Add(ManifestItem.SkippedBytecode(itemPath));
                     continue;
                 }
                 var output = Path.Combine(outputRoot, relative + ".json");
                 var parent = Path.GetDirectoryName(output); if (!string.IsNullOrEmpty(parent)) Directory.CreateDirectory(parent);
+                var outputPath = output.Substring(outputRoot.Length).TrimStart(Path.DirectorySeparatorChar).Replace('\\', '/');
+                if (fileKind == TjsFileKind.Kbad100BinaryData)
+                {
+                    var document = KbadReader.ReadFile(file);
+                    using (var stream = File.Create(output)) KbadJson.Write(stream, document, kbadJsonOptions);
+                    parsedCount++;
+                    manifest.Add(ManifestItem.ParsedKbad(itemPath, outputPath));
+                    continue;
+                }
+
                 var result = Parser.ParseFile(file, cli.ParseOptions);
                 using (var stream = File.Create(output)) AstJson.Write(stream, result, jsonOptions);
                 var errors = result.Diagnostics.Count(d => d.Severity == DiagnosticSeverity.Error);
-                var outputPath = output.Substring(outputRoot.Length).TrimStart(Path.DirectorySeparatorChar).Replace('\\', '/');
                 if (errors == 0)
                 {
                     parsedCount++;
-                    manifest.Add(ManifestItem.Parsed(itemPath, result.Source.Encoding, result.Source.RootMode.ToString(), outputPath));
+                    manifest.Add(ManifestItem.ParsedSource(itemPath, result.Source.Encoding, result.Source.RootMode.ToString(), outputPath));
                 }
                 else
                 {
@@ -120,14 +152,14 @@ internal static class Cli
             catch (Exception ex)
             {
                 failedCount++;
-                manifest.Add(ManifestItem.Failed(itemPath, "source-text", null, null, 1, null, ex.Message));
+                manifest.Add(ManifestItem.Failed(itemPath, ManifestKind(fileKind), null, null, 1, null, ex.Message));
                 Console.Error.WriteLine(relative + ": " + ex.Message);
             }
         }
         var manifestPath = Path.Combine(outputRoot, "manifest.json");
         File.WriteAllText(manifestPath, JsonSerializer.Serialize(new
         {
-            schemaVersion = "1.2",
+            schemaVersion = "1.3",
             inputRoot,
             fileCount = files.Length,
             parsedCount,
@@ -161,11 +193,21 @@ internal static class Cli
         }
     }
 
+    private static string ManifestKind(TjsFileKind fileKind)
+    {
+        switch (fileKind)
+        {
+            case TjsFileKind.Tjs2100Bytecode: return "tjs2100-bytecode";
+            case TjsFileKind.Kbad100BinaryData: return "kbad100-binary-data";
+            default: return "source-text";
+        }
+    }
+
     private static void PrintUsage()
     {
         Console.Error.WriteLine("Usage: tjsparse parse <file|directory> [-o path] [--mode auto|script|expression]");
         Console.Error.WriteLine("                [--preprocess preserve|active] [-D NAME=VALUE] [--encoding name]");
-        Console.Error.WriteLine("                [--compact] [--no-comments]");
+        Console.Error.WriteLine("                [--kbad-json plain|typed] [--compact] [--no-comments]");
     }
 }
 
@@ -176,6 +218,7 @@ internal sealed class CliOptions
     public bool Compact { get; private set; }
     public bool NoComments { get; private set; }
     public bool ShowHelp { get; private set; }
+    public KbadJsonShape KbadJsonShape { get; private set; } = KbadJsonShape.Plain;
     public ParseOptions ParseOptions { get; } = new ParseOptions();
 
     public static CliOptions Parse(string[] args)
@@ -193,6 +236,7 @@ internal sealed class CliOptions
                 case "--mode": result.ParseOptions.RootMode = ParseMode(RequireValue(args, ref i, arg)); break;
                 case "--preprocess": result.ParseOptions.PreprocessorMode = ParsePreprocessor(RequireValue(args, ref i, arg)); break;
                 case "--encoding": result.ParseOptions.EncodingHint = RequireValue(args, ref i, arg); break;
+                case "--kbad-json": result.KbadJsonShape = ParseKbadJsonShape(RequireValue(args, ref i, arg)); break;
                 case "--compact": result.Compact = true; break;
                 case "--no-comments": result.NoComments = true; break;
                 case "-D": AddDefine(result.ParseOptions, RequireValue(args, ref i, arg)); break;
@@ -218,6 +262,9 @@ internal sealed class CliOptions
     private static PreprocessorMode ParsePreprocessor(string value) => value.ToLowerInvariant() switch
     { "preserve" => PreprocessorMode.PreserveAll, "active" => PreprocessorMode.ActiveOnly, _ => throw new CliException("Invalid preprocessor mode: " + value) };
 
+    private static KbadJsonShape ParseKbadJsonShape(string value) => value.ToLowerInvariant() switch
+    { "plain" => KbadJsonShape.Plain, "typed" => KbadJsonShape.Typed, _ => throw new CliException("Invalid KBAD JSON shape: " + value) };
+
     private static void AddDefine(ParseOptions options, string definition)
     {
         var split = definition.IndexOf('=');
@@ -242,26 +289,18 @@ internal sealed class ManifestItem
         ErrorCount = errorCount; Output = output; Failure = failure; SkipReason = skipReason;
     }
 
-    public static ManifestItem Parsed(string path, string encoding, string rootMode, string output)
+    public static ManifestItem ParsedSource(string path, string encoding, string rootMode, string output)
         => new ManifestItem(path, "source-text", "parsed", encoding, rootMode, 0, output, null, null);
+
+    public static ManifestItem ParsedKbad(string path, string output)
+        => new ManifestItem(path, "kbad100-binary-data", "parsed", null, null, 0, output, null, null);
 
     public static ManifestItem Failed(string path, string kind, string? encoding, string? rootMode, int errorCount, string? output, string failure)
         => new ManifestItem(path, kind, "failed", encoding, rootMode, errorCount, output, failure, null);
 
-    public static ManifestItem SkippedUnsupported(string path, TjsFileKind fileKind)
-    {
-        switch (fileKind)
-        {
-            case TjsFileKind.Tjs2100Bytecode:
-                return new ManifestItem(path, "tjs2100-bytecode", "skipped", null, null, 0, null, null,
-                    "Compiled TJS2 bytecode is outside the supported source-parser scope.");
-            case TjsFileKind.Kbad100BinaryData:
-                return new ManifestItem(path, "kbad100-binary-data", "skipped", null, null, 0, null, null,
-                    "Binary TJS dictionary/array data is outside the supported source-parser scope.");
-            default:
-                throw new ArgumentOutOfRangeException(nameof(fileKind), fileKind, "Unsupported file kind.");
-        }
-    }
+    public static ManifestItem SkippedBytecode(string path)
+        => new ManifestItem(path, "tjs2100-bytecode", "skipped", null, null, 0, null, null,
+            "Compiled TJS2 bytecode is outside the supported parser scope.");
 
     public string Path { get; }
     public string Kind { get; }

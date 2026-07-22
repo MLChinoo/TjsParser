@@ -1,6 +1,6 @@
 # TjsParser
 
-面向吉里吉里/KRKRZ TJS2 明文脚本的 C# 解析器。核心库同时面向 `netstandard2.0` 和 `net8.0`，提供强类型 AST、源码位置、注释、条件编译信息和 JSON 输出；不会执行脚本。
+面向吉里吉里/KRKRZ TJS2 文件的 C# 解析器。核心库同时面向 `netstandard2.0` 和 `net8.0`，支持明文脚本的强类型 AST，以及 KBAD100 Dictionary/Array 二进制数据的递归值模型和 JSON 输出；不会执行脚本。
 
 ## 构建
 
@@ -21,6 +21,7 @@ dotnet build TjsParser.sln -c Release
 
 ```csharp
 using TjsParser;
+using TjsParser.Kbad;
 using TjsParser.Serialization;
 
 var result = Parser.ParseFile(@"D:\game\data\startup.tjs");
@@ -31,11 +32,17 @@ if (!result.Success)
     foreach (var diagnostic in result.Diagnostics)
         Console.WriteLine($"{diagnostic.Code}: {diagnostic.Message}");
 }
+
+if (Parser.DetectFileKind(@"D:\game\data\font\atlas.tjs") == TjsFileKind.Kbad100BinaryData)
+{
+    var document = KbadReader.ReadFile(@"D:\game\data\font\atlas.tjs");
+    var dataJson = KbadJson.Serialize(document);
+}
 ```
 
 `Parser.ParseText` 用于已经解码成 .NET `string` 的源码。`Parser.ParseFile` 自动识别 UTF-8、UTF-16LE/BE BOM 和 CP932；也可以通过 `ParseOptions.EncodingHint` 强制指定。
 
-`.tjs` 除了明文源码，还可能是以 `TJS2100\0` 开头的已编译 TJS2 字节码，或以 `KBAD100\0` 开头的二进制 Dictionary/Array 数据。本项目当前只解析明文源码，不反汇编字节码或反序列化 KBAD 数据。可以在解析前调用 `Parser.DetectFileKind(path)`；直接把这两种二进制文件传给 `Parser.ParseFile` 会抛出 `UnsupportedTjsFormatException`，编码参数不会绕过该检查。
+`.tjs` 除了明文源码，还可能是以 `TJS2100\0` 开头的已编译 TJS2 字节码，或以 `KBAD100\0` 开头的二进制 Dictionary/Array 数据。使用 `Parser.DetectFileKind(path)` 区分格式；源码交给 `Parser.ParseFile`，KBAD 数据交给 `KbadReader.ReadFile`。`Parser.ParseFile` 仍只接受源码，直接传入任一二进制格式会抛出 `UnsupportedTjsFormatException`。本项目暂不反汇编 TJS2100 字节码。
 
 ## 命令行
 
@@ -70,10 +77,11 @@ dotnet run --project src/TjsParser.Cli -- parse D:\game\data -o D:\output\active
 - `--preprocess preserve|active`：保留全部条件块，或仅解析激活代码。
 - `-D NAME=VALUE`：设置预处理初始宏。
 - `--encoding utf-8|utf-16le|utf-16be|cp932`：强制输入编码。
+- `--kbad-json plain|typed`：KBAD 输出普通 key/value JSON，或保留类型和字节范围的无损 JSON；默认为 `plain`。
 - `--compact`：输出紧凑 JSON。
 - `--no-comments`：不把注释写入 JSON。
 
-目录模式保持输入相对路径，以 `.tjs.json` 为扩展名，并生成汇总 `manifest.json`。TJS2100 字节码和 KBAD100 二进制数据不会生成 JSON，而是在 manifest 中分别标记为 `tjs2100-bytecode`/`skipped` 和 `kbad100-binary-data`/`skipped`；跳过它们不导致命令失败。只要任一明文文件存在错误级诊断，CLI 返回退出码 1。单文件输入为任一二进制格式时不会生成输出，并返回退出码 1。
+目录模式保持输入相对路径，以 `.tjs.json` 为扩展名，并生成 schema `1.3` 的汇总 `manifest.json`。明文源码和 KBAD100 数据都会生成 JSON，并分别标记为 `source-text`/`parsed` 和 `kbad100-binary-data`/`parsed`。TJS2100 字节码仍标记为 `tjs2100-bytecode`/`skipped`，跳过字节码不导致命令失败。源码诊断或 KBAD 格式错误会令 CLI 返回退出码 1。
 
 ## AST 与 JSON
 
@@ -86,6 +94,8 @@ JSON 顶层固定包含 `schemaVersion`、`source`、`document`、`preprocessor`
 
 更完整的字段约定见 [JSON format](docs/json-format.md)。
 
+KBAD 使用独立的 `KbadDocument`/`KbadValue` 模型，不伪装成源码 AST。默认 JSON 直接输出普通 object/array/key/value，便于 Python 等工具读取；null/void 分别还原为配套 TOML 使用的 `{"":1}`/`{"":0}`。KBAD 自身支持 Boolean 标签，但当前配对 `ctxfontprefs` 的 TOML 布尔值在编译后成为整数 `1/0`，无法仅凭这些 KBAD 无歧义恢复。`--kbad-json typed` 可输出保留 Dictionary 顺序、null/void 区别、整数精度、octet 类型和字节范围的无损结构。详细约定见 [KBAD JSON format](docs/kbad-json-format.md)。
+
 ## 测试真实语料
 
 ```powershell
@@ -93,4 +103,4 @@ $env:TJS_CORPUS_DIR = 'D:\game\data'
 dotnet test TjsParser.sln -c Release
 ```
 
-游戏文件仅从外部目录读取，不会复制到仓库中。语料测试会解析所有明文文件，并验证 TJS2100 与 KBAD100 二进制文件会在文本解码前被识别和拒绝。
+游戏文件仅从外部目录读取，不会复制到仓库中。语料测试会解析所有明文文件和 KBAD100 数据，并验证 TJS2100 字节码会在文本解码前被识别和拒绝。
