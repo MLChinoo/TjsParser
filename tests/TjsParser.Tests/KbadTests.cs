@@ -126,7 +126,6 @@ public sealed class KbadTests
         Assert.Contains("AQI=", json);
         Assert.DoesNotContain("\\u", json, StringComparison.OrdinalIgnoreCase);
         using var parsed = JsonDocument.Parse(json);
-        Assert.Equal("1.0", parsed.RootElement.GetProperty("schemaVersion").GetString());
         Assert.Equal("KbadDocument", parsed.RootElement.GetProperty("document").GetProperty("type").GetString());
         var root = parsed.RootElement.GetProperty("document").GetProperty("value");
         Assert.Equal("Dictionary", root.GetProperty("type").GetString());
@@ -147,7 +146,6 @@ public sealed class KbadTests
         }
 
         var json = KbadJson.Serialize(Read(stream), new KbadJsonOptions { Indented = false });
-        Assert.DoesNotContain("schemaVersion", json);
         Assert.DoesNotContain("\"type\"", json);
         Assert.DoesNotContain("\\u", json, StringComparison.OrdinalIgnoreCase);
         using var parsed = JsonDocument.Parse(json);

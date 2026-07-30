@@ -38,7 +38,6 @@ public static class AstJson
             Encoder = TjsJsonEncoder.Instance
         });
         writer.WriteStartObject();
-        writer.WriteString("schemaVersion", "1.0");
         WriteSource(writer, result.Source);
         writer.WritePropertyName("document"); WriteNode(writer, result.Document);
         if (options.IncludeComments) WriteComments(writer, result.Comments);

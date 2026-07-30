@@ -34,7 +34,6 @@ KBAD100 格式本身定义了 Boolean 标签 `0xC2/0xC3`，解析器会原样还
 
 ```json
 {
-  "schemaVersion": "1.0",
   "source": {
     "path": "data/font/atlas.tjs",
     "format": "kbad100",

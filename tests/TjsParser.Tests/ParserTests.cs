@@ -159,7 +159,6 @@ public sealed class ParserTests
         var result = Parser.ParseText("var value = 9223372036854775807;");
         var json = AstJson.Serialize(result, new AstJsonOptions { Indented = false });
         using var document = JsonDocument.Parse(json);
-        Assert.Equal("1.0", document.RootElement.GetProperty("schemaVersion").GetString());
         Assert.Equal("ScriptDocument", document.RootElement.GetProperty("document").GetProperty("type").GetString());
         var literal = document.RootElement.GetProperty("document").GetProperty("body")[0].GetProperty("declarations")[0].GetProperty("initializer");
         Assert.Equal("9223372036854775807", literal.GetProperty("value").GetString());

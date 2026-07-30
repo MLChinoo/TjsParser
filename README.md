@@ -81,7 +81,7 @@ dotnet run --project src/TjsParser.Cli -- parse D:\game\data -o D:\output\active
 - `--compact`：输出紧凑 JSON。
 - `--no-comments`：不把注释写入 JSON。
 
-目录模式保持输入相对路径，以 `.tjs.json` 为扩展名，并生成 schema `1.3` 的汇总 `manifest.json`。明文源码和 KBAD100 数据都会生成 JSON，并分别标记为 `source-text`/`parsed` 和 `kbad100-binary-data`/`parsed`。TJS2100 字节码仍标记为 `tjs2100-bytecode`/`skipped`，跳过字节码不导致命令失败。源码诊断或 KBAD 格式错误会令 CLI 返回退出码 1。
+目录模式保持输入相对路径，以 `.tjs.json` 为扩展名，并生成汇总 `manifest.json`。明文源码和 KBAD100 数据都会生成 JSON，并分别标记为 `source-text`/`parsed` 和 `kbad100-binary-data`/`parsed`。TJS2100 字节码仍标记为 `tjs2100-bytecode`/`skipped`，跳过字节码不导致命令失败。源码诊断或 KBAD 格式错误会令 CLI 返回退出码 1。
 
 ## AST 与 JSON
 
@@ -90,7 +90,7 @@ dotnet run --project src/TjsParser.Cli -- parse D:\game\data -o D:\output\active
 - `ScriptDocumentSyntax`：普通 TJS 程序。
 - `ExpressionDocumentSyntax`：以 `%[...]`、`[...]`、`(const)[...]` 或匿名函数为整文件内容的表达式。
 
-JSON 顶层固定包含 `schemaVersion`、`source`、`document`、`preprocessor`、`diagnostics`，默认还包含 `comments`。每个 AST 节点都有 `type` 和结束位置不包含在内的 `span`。TJS 字典始终输出有序 `entries`，不会压缩成 JSON object，因此能保留重复键、表达式键和分隔形式。
+JSON 顶层固定包含 `source`、`document`、`preprocessor`、`diagnostics`，默认还包含 `comments`。每个 AST 节点都有 `type` 和结束位置不包含在内的 `span`。TJS 字典始终输出有序 `entries`，不会压缩成 JSON object，因此能保留重复键、表达式键和分隔形式。
 
 更完整的字段约定见 [JSON format](docs/json-format.md)。
 

@@ -159,7 +159,6 @@ internal static class Cli
         var manifestPath = Path.Combine(outputRoot, "manifest.json");
         File.WriteAllText(manifestPath, JsonSerializer.Serialize(new
         {
-            schemaVersion = "1.3",
             inputRoot,
             fileCount = files.Length,
             parsedCount,

@@ -1,4 +1,4 @@
-# JSON format 1.0
+# JSON format
 
 TjsParser 的 JSON 是 AST 的跨语言表示，而不是执行 TJS 后得到的数据。
 
@@ -8,7 +8,6 @@ TjsParser 的 JSON 是 AST 的跨语言表示，而不是执行 TJS 后得到的
 
 ```json
 {
-  "schemaVersion": "1.0",
   "source": {
     "path": "main/envinit.tjs",
     "encoding": "cp932",
@@ -73,9 +72,9 @@ TjsParser 的 JSON 是 AST 的跨语言表示，而不是执行 TJS 后得到的
 
 预处理器只计算官方 `@set/@if/@endif` 使用的 Int32 表达式，不执行普通 TJS。
 
-## 目录 manifest 1.1
+## 目录 manifest
 
-CLI 递归解析目录时生成的 `manifest.json` 与单文件 AST JSON 使用独立的版本号。manifest 1.1 顶层包含 `fileCount`、`parsedCount`、`skippedCount`、`failedCount` 和 `success`。
+CLI 递归解析目录时生成的 `manifest.json` 顶层包含 `fileCount`、`parsedCount`、`skippedCount`、`failedCount` 和 `success`。
 
 每个 `files` 条目通过 `kind` 和 `status` 描述处理结果：
 

@@ -54,7 +54,6 @@ public static class KbadJson
     private static void WriteTypedDocument(Utf8JsonWriter writer, KbadDocument document, KbadJsonOptions options)
     {
         writer.WriteStartObject();
-        writer.WriteString("schemaVersion", "1.0");
         writer.WritePropertyName("source");
         writer.WriteStartObject();
         if (document.SourcePath == null) writer.WriteNull("path"); else writer.WriteString("path", document.SourcePath);
